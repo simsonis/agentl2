@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "agentl2-llm"
+version = "0.1.0"
+description = "LLM-based legal chatbot module for agentl2 project."
+authors = ["agentl2 team <team@example.com>"]
+readme = "README.md"
+packages = [{ include = "agentl2_llm", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+openai = "^1.51.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.2.1"
+httpx = "^0.27.0"
+beautifulsoup4 = "^4.12.3"
+lxml = "^5.1.0"
+loguru = "^0.7.2"
+typing-extensions = "^4.12.2"
+asyncio = "^3.4.3"
+fastapi = "^0.104.0"
+uvicorn = "^0.24.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.1"
+pytest-asyncio = "^0.23.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"

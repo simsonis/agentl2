@@ -1,0 +1,121 @@
+﻿version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: agentl2-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-UTC}
+      LANG: ${LANG:-en_US.UTF-8}
+      LC_ALL: ${LC_ALL:-en_US.UTF-8}
+      POSTGRES_DB: ${POSTGRES_DB:-agentl2}
+      POSTGRES_USER: ${POSTGRES_USER:-agentl2_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:-"--encoding=UTF8 --locale=en_US.UTF-8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentl2_app} -d ${POSTGRES_DB:-agentl2}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  adminer:
+    image: adminer:4
+    container_name: agentl2-adminer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  collector:
+    build:
+      context: ./collector
+    container_name: agentl2-collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      COLLECTOR_LOG_FORMAT: ${COLLECTOR_LOG_FORMAT:-json}
+      COLLECTOR_LOG_LEVEL: ${COLLECTOR_LOG_LEVEL:-INFO}
+      COLLECTOR_METRICS_PORT: ${COLLECTOR_METRICS_PORT:-8000}
+      TZ: ${TZ:-UTC}
+    working_dir: /app
+    volumes:
+      - ./collector:/app
+    command: ["/bin/sh", "-c", "tail -f /dev/null"]
+    ports:
+      - "${COLLECTOR_METRICS_PORT:-8000}:${COLLECTOR_METRICS_PORT:-8000}"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >
+          poetry run python -c "from agentl2.config import get_settings;
+          from agentl2.db import init_engine, healthcheck;
+          s = get_settings();
+          healthcheck(init_engine(s))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  llm:
+    build:
+      context: ./llm
+      dockerfile: Dockerfile
+    container_name: agentl2-llm
+    depends_on:
+      - collector
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    working_dir: /app
+    volumes:
+      - ./llm:/app
+    command: ["uvicorn", "simple_server:app", "--host", "0.0.0.0", "--port", "8001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ui:
+    build:
+      context: ./ui
+    container_name: agentl2-ui
+    depends_on:
+      - collector
+      - llm
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_SERVICE_URL=http://llm:8001
+
+volumes:
+  pg_data:
+    name: agentl2-pg-data

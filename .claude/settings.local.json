@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.perplexity.ai)",
+      "WebSearch",
+      "WebFetch(domain:refero.design)",
+      "WebFetch(domain:medium.com)",
+      "Bash(npm run dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(mkdir:*)",
+      "Bash(dir:*)",
+      "Bash(python:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry run:*)",
+      "Bash(uvicorn:*)",
+      "Bash(curl http://localhost:8001/health)",
+      "Bash(docker:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(curl http://localhost:3000)",
+      "Bash(tasklist)",
+      "Bash(start \"Docker Desktop\" \"C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe\")",
+      "Bash(timeout:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose stop:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

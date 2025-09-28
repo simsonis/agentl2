@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "agentl2-collector"
+version = "0.1.0"
+description = "Data collection utilities for agentl2 project."
+authors = ["agentl2 team <team@example.com>"]
+readme = "README.md"
+packages = [{ include = "agentl2", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.32.3"
+pydantic-settings = "^2.2.1"
+SQLAlchemy = "^2.0.30"
+psycopg2-binary = "^2.9.9"
+tenacity = "^8.2.3"
+python-dateutil = "^2.9.0.post0"
+loguru = "^0.7.2"
+click = "^8.1.7"
+fastapi = "^0.111.0"
+uvicorn = { version = "^0.30.1", extras = ["standard"] }
+orjson = "^3.10.3"
+typing-extensions = "^4.12.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.1"
+
+[tool.poetry.scripts]
+agentl2-collect-laws = "agentl2.collect_laws:main"
+agentl2-collect-prec = "agentl2.collect_prec:main"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
