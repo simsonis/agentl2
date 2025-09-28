@@ -4,7 +4,7 @@ FastAPI server for Enhanced Agent Pipeline.
 
 import asyncio
 import json
-from typing import Dict, Any, AsyncGenerator, List
+from typing import Dict, Any, AsyncGenerator, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +19,7 @@ from ..models import LegalResponse
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
-    conversation_id: str = None
+    conversation_id: Optional[str] = None
 
 
 class ChatStreamResponse(BaseModel):

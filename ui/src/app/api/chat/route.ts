@@ -84,8 +84,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        messages,
-        conversation_id: null // Could be extracted from request if needed
+        messages
       }),
     });
 

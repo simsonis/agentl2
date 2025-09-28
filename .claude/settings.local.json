@@ -23,7 +23,21 @@
       "Bash(start \"Docker Desktop\" \"C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe\")",
       "Bash(timeout:*)",
       "Bash(docker-compose restart:*)",
-      "Bash(docker-compose stop:*)"
+      "Bash(docker-compose stop:*)",
+      "Bash(curl http://localhost:3001)",
+      "Bash(npm run build:*)",
+      "Bash(PORT=3000 npm run dev)",
+      "Bash(docker-compose:*)",
+      "Bash(curl http://localhost:8001/docs)",
+      "Bash(curl -X POST http://localhost:8001/chat/stream -H \"Content-Type: application/json\" -d '{\"\"messages\"\":[{\"\"role\"\":\"\"user\"\",\"\"content\"\":\"\"테스트\"\"}],\"\"conversation_id\"\":null}')",
+      "Bash(curl -X POST http://localhost:8001/chat/stream -H \"Content-Type: application/json\" -d \"{\"\"messages\"\":[{\"\"role\"\":\"\"user\"\",\"\"content\"\":\"\"개인정보보호법에 대해 알려주세요\"\"}],\"\"conversation_id\"\":null}\")",
+      "Bash(curl http://localhost:8001/openapi.json)",
+      "Bash(curl -X POST http://localhost:8001/chat/stream -H \"Content-Type: application/json\" -d @-)",
+      "Bash(PORT=3001 npm run dev)",
+      "Bash(PORT=3333 npm run dev)",
+      "Bash(curl -X POST http://localhost:3333/api/chat -H \"Content-Type: application/json\" -d @-)",
+      "Bash(Powershell:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []
