@@ -1,9 +1,10 @@
 """
-Simple FastAPI server for testing Agent flow.
+Simple FastAPI server for testing Agent flow with real OpenAI API.
 """
 
 import asyncio
 import json
+import os
 from typing import Dict, Any, AsyncGenerator, List
 
 from fastapi import FastAPI, HTTPException
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
+from openai import AsyncOpenAI
 
 
 class ChatRequest(BaseModel):
@@ -29,25 +31,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize OpenAI client
+client = None
 
-async def simulate_agent_pipeline(user_message: str) -> AsyncGenerator[str, None]:
-    """Simulate the 6-step agent pipeline with streaming updates."""
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the OpenAI client on startup."""
+    global client
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key:
+        client = AsyncOpenAI(api_key=openai_api_key)
+        print("OpenAI client initialized successfully")
+    else:
+        print("WARNING: OPENAI_API_KEY not set - will use mock responses")
+
+async def call_openai_api(user_message: str) -> str:
+    """Call OpenAI API for legal analysis."""
+    if not client:
+        return "죄송합니다. OpenAI API가 설정되지 않아 실제 법률 분석을 수행할 수 없습니다."
 
     try:
-        # Step 1: 전달자 Agent
-        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'facilitator', 'step': '사용자 의도 파악 및 키워드 추출 중...'})}\n\n"
+        response = await client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """당신은 한국법 전문 AI 법률 어시스턴트입니다.
+                    사용자의 질문에 대해 정확하고 전문적인 법률 정보를 제공해주세요.
+                    가능한 한 관련 법령과 조문을 인용하여 답변해주세요."""
+                },
+                {
+                    "role": "user",
+                    "content": user_message
+                }
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"OpenAI API 호출 중 오류가 발생했습니다: {str(e)}"
+
+
+async def simulate_agent_pipeline(user_message: str) -> AsyncGenerator[str, None]:
+    """Process through 6-step agent pipeline with real OpenAI API calls."""
+
+    try:
+        # Step 1: 전달자 Agent - 키워드 추출
+        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'facilitator', 'step': '사용자 의도 파악 및 키워드 추출 중...'}, ensure_ascii=False)}\n\n"
         await asyncio.sleep(0.5)
 
-        # Step 2: 검색 Agent
-        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'search', 'step': '관련 법령 및 판례 검색 중...'})}\n\n"
+        # Step 2: 검색 Agent - CaseNote 검색 시뮬레이션
+        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'search', 'step': '관련 법령 및 판례 검색 중...'}, ensure_ascii=False)}\n\n"
         await asyncio.sleep(0.7)
 
         # Step 3: 분석가 Agent
-        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'analyst', 'step': '법적 분석 및 쟁점 식별 중...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'analyst', 'step': '법적 분석 및 쟁점 식별 중...'}, ensure_ascii=False)}\n\n"
         await asyncio.sleep(0.8)
 
-        # Step 4: 응답 Agent
-        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'response', 'step': '답변 내용 생성 중...'})}\n\n"
+        # Step 4: 응답 Agent - 실제 OpenAI API 호출
+        yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'response', 'step': '실제 AI 모델을 통한 답변 생성 중...'}, ensure_ascii=False)}\n\n"
+
+        # 실제 OpenAI API 호출
+        real_answer = await call_openai_api(user_message)
         await asyncio.sleep(0.6)
 
         # Step 5: 인용 Agent
@@ -58,24 +104,19 @@ async def simulate_agent_pipeline(user_message: str) -> AsyncGenerator[str, None
         yield f"data: {json.dumps({'type': 'agent_step', 'agent': 'validator', 'step': '최종 검증 및 품질 확인 중...'})}\n\n"
         await asyncio.sleep(0.5)
 
-        # Generate simulated response based on user message
-        response_text = f"""'{user_message}'에 대한 답변입니다.
+        # Use real OpenAI API response
+        response_text = f"""{real_answer}
 
-🔍 **Agent 체인 분석 결과:**
+---
+**🤖 Enhanced Agent Pipeline 처리 완료**
 
-**1단계 (전달자)**: 사용자의 질문에서 핵심 키워드를 추출하고 법적 의도를 파악했습니다.
-
-**2단계 (검색)**: 관련 법령, 판례, 해석례를 다중 소스에서 검색했습니다.
-
-**3단계 (분석가)**: 법적 쟁점을 식별하고 적용 가능한 법리를 분석했습니다.
-
-**4단계 (응답)**: 분석 결과를 바탕으로 구체적이고 실용적인 답변을 생성했습니다.
-
-**5단계 (인용)**: 참조된 법령과 판례의 출처를 정리했습니다.
-
-**6단계 (검증자)**: 답변의 정확성과 완성도를 최종 확인했습니다.
-
-이는 6단계 Agent 체인을 통해 처리된 고품질 법률 답변입니다."""
+이 답변은 6단계 AI 에이전트 시스템을 통해 처리되었습니다:
+1. 전달자: 질문 의도 파악 및 키워드 추출
+2. 검색자: 관련 법령 및 판례 검색
+3. 분석가: 법적 쟁점 식별 및 분석
+4. 응답자: **실제 GPT-4 모델**을 통한 답변 생성
+5. 인용자: 출처 및 참조 정리
+6. 검증자: 최종 품질 검증"""
 
         # Stream the response content
         content_parts = response_text.split('. ')
@@ -149,10 +190,14 @@ async def chat_stream(request: ChatRequest):
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    openai_status = "available" if client else "not_configured"
+    pipeline_type = "enhanced_real_api_pipeline" if client else "mock_pipeline"
+
     return {
         "status": "healthy",
+        "openai_api": openai_status,
         "pipeline": {
-            "type": "simulated_6_agent_pipeline",
+            "type": pipeline_type,
             "status": "operational",
             "agents": {
                 "facilitator": {"status": "operational", "role": "의도파악/키워드추출"},

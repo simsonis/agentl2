@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
+
 # Install Poetry
 RUN pip install poetry
 
@@ -30,5 +33,5 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
-# Run the simple server
+# Run the FastAPI server
 CMD ["uvicorn", "simple_server:app", "--host", "0.0.0.0", "--port", "8001"]

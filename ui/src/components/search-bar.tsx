@@ -42,21 +42,21 @@ export default function SearchBar({ value, onChange, onSubmit }: SearchBarProps)
         <button
           type="button"
           className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded-full hover:bg-secondary/80 transition-colors"
-          onClick={() => onChange({ target: { value: "자본시장법" } } as any)}
+          onClick={() => onChange({ target: { value: "자본시장법" } } as React.ChangeEvent<HTMLInputElement>)}
         >
           자본시장법
         </button>
         <button
           type="button"
           className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded-full hover:bg-secondary/80 transition-colors"
-          onClick={() => onChange({ target: { value: "개인정보보호법" } } as any)}
+          onClick={() => onChange({ target: { value: "개인정보보호법" } } as React.ChangeEvent<HTMLInputElement>)}
         >
           개인정보보호법
         </button>
         <button
           type="button"
           className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded-full hover:bg-secondary/80 transition-colors"
-          onClick={() => onChange({ target: { value: "최신 판례" } } as any)}
+          onClick={() => onChange({ target: { value: "최신 판례" } } as React.ChangeEvent<HTMLInputElement>)}
         >
           최신 판례
         </button>

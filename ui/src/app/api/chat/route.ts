@@ -1,4 +1,4 @@
-// IMPORTANT! Set the runtime to edge
+﻿// IMPORTANT! Set the runtime to edge
 export const runtime = 'edge';
 
 // Get LLM service URL from environment
@@ -6,66 +6,73 @@ const LLM_SERVICE_URL = process.env.LLM_SERVICE_URL || 'http://localhost:8001';
 
 // Helper function to create a streaming response from Agent Pipeline
 function createAgentStream(response: Response): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
   return new ReadableStream({
-    async pull(controller) {
-      const encoder = new TextEncoder();
+    async start(controller) {
       const reader = response.body?.getReader();
 
       if (!reader) {
+        controller.enqueue(
+          encoder.encode(
+            JSON.stringify({ type: 'error', error: 'LLM 서비스로부터 스트림을 열 수 없습니다.' }) + '\n'
+          )
+        );
         controller.close();
         return;
       }
 
+      const flushBufferedEvent = (chunk: string) => {
+        const dataLines = chunk
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith('data: '));
+
+        if (dataLines.length === 0) {
+          return;
+        }
+
+        const payload = dataLines.map((line) => line.slice(6)).join('\n');
+        if (!payload) {
+          return;
+        }
+
+        try {
+          const parsed = JSON.stringify(JSON.parse(payload)) + '\n';
+          controller.enqueue(encoder.encode(parsed));
+        } catch (error) {
+          console.error('Error parsing SSE payload:', error, payload);
+        }
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-
-          // Decode the chunk and parse SSE data
-          const chunk = new TextDecoder().decode(value);
-          const lines = chunk.split('\n').filter(line => line.trim());
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === 'agent_step') {
-                  // Show agent step progress
-                  controller.enqueue(encoder.encode(`🔄 ${data.agent}: ${data.step}\n`));
-                } else if (data.type === 'content') {
-                  // Stream content chunks
-                  controller.enqueue(encoder.encode(data.content));
-                } else if (data.type === 'complete') {
-                  // Add final formatting with sources
-                  const final = data.final_response;
-                  if (final.sources && final.sources.length > 0) {
-                    controller.enqueue(encoder.encode('\n\n📚 참고자료:\n'));
-                    final.sources.forEach((source: any, index: number) => {
-                      controller.enqueue(encoder.encode(`${index + 1}. ${source.source_name}\n`));
-                    });
-                  }
-
-                  if (final.followUps && final.followUps.length > 0) {
-                    controller.enqueue(encoder.encode('\n💡 추가 질문:\n'));
-                    final.followUps.forEach((question: string, index: number) => {
-                      controller.enqueue(encoder.encode(`${index + 1}. ${question}\n`));
-                    });
-                  }
-                  break;
-                } else if (data.type === 'error') {
-                  controller.enqueue(encoder.encode(`❌ 오류: ${data.error}`));
-                  break;
-                }
-              } catch (parseError) {
-                console.error('Error parsing SSE data:', parseError);
-              }
-            }
+          if (done) {
+            break;
           }
+
+          buffer += decoder.decode(value, { stream: true });
+          const segments = buffer.split('\n\n');
+          buffer = segments.pop() ?? '';
+
+          for (const segment of segments) {
+            flushBufferedEvent(segment);
+          }
+        }
+
+        if (buffer.trim().length > 0) {
+          flushBufferedEvent(buffer);
         }
       } catch (error) {
         console.error('Stream error:', error);
-        controller.enqueue(encoder.encode('❌ 스트림 처리 중 오류가 발생했습니다.'));
+        controller.enqueue(
+          encoder.encode(
+            JSON.stringify({ type: 'error', error: '스트림 처리 중 오류가 발생했습니다.' }) + '\n'
+          )
+        );
       } finally {
         controller.close();
       }
@@ -84,7 +91,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        messages
+        messages,
       }),
     });
 
@@ -95,24 +102,36 @@ export async function POST(req: Request) {
     // Create streaming response from Agent Pipeline
     const stream = createAgentStream(response);
 
-    // Respond with the stream
+    // Respond with the stream (JSON Lines)
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
+        'Connection': 'keep-alive',
       },
     });
   } catch (error) {
     console.error('Chat API error:', error);
 
-    // Fallback response
-    return new Response(
-      `❌ Agent 체인 처리 중 오류가 발생했습니다: ${error}\n\n💡 다음을 확인해 주세요:\n1. LLM 서비스가 실행 중인지 확인\n2. 네트워크 연결 상태 확인\n3. 잠시 후 다시 시도`,
-      {
-        status: 500,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-      }
-    );
+    // Fallback response as JSON error event
+    const encoder = new TextEncoder();
+    const fallbackStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            JSON.stringify({
+              type: 'error',
+              error: `Agent 파이프라인 처리 중 오류가 발생했습니다: ${String(error)}`,
+            }) + '\n'
+          )
+        );
+        controller.close();
+      },
+    });
+
+    return new Response(fallbackStream, {
+      status: 500,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
   }
 }

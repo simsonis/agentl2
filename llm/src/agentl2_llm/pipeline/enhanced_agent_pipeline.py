@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Optional, Dict, Any
+import inspect
+from datetime import datetime
+from typing import Optional, Dict, Any, Callable, Awaitable, List
 
 import openai
+from pydantic import BaseModel
 from loguru import logger
 
-from ..agents.base_agent import ConversationContext, AgentAction
+from ..agents.base_agent import ConversationContext, AgentAction, AgentResponse
 from ..agents.facilitator_agent import FacilitatorAgent
 from ..agents.search_agent import SearchAgent
 from ..agents.analyst_agent import AnalystAgent
@@ -19,13 +22,13 @@ from ..agents.response_agent import ResponseAgent
 from ..agents.citation_agent import CitationAgent
 from ..agents.validator_agent import ValidatorAgent
 from ..search.search_coordinator import SearchCoordinator
-from ..models import LegalResponse, SearchSource
+from ..models import LegalResponse, SearchSource, SearchResults, SourceType
 
 
 class EnhancedAgentPipeline:
     """
-    확장된 에이전트 파이프라인 - 6개 전문 에이전트 협업
-    전달자 → 검색 → 분석가 → 응답 → 인용 → 검증자
+    ???????????????- 6??�?????????
+    ??????검????분석가 ????????????검증자
     """
 
     def __init__(
@@ -48,7 +51,7 @@ class EnhancedAgentPipeline:
             "temperature": temperature
         }
 
-        # 기존 에이전트들
+        # 기존 ??????
         self.facilitator = FacilitatorAgent(**agent_kwargs)
         self.search_agent = SearchAgent(
             search_coordinator=self.search_coordinator,
@@ -56,7 +59,7 @@ class EnhancedAgentPipeline:
         )
         self.response_agent = ResponseAgent(**agent_kwargs)
 
-        # 새로운 에이전트들
+        # ?�????????
         self.analyst = AnalystAgent(**agent_kwargs)
         self.citation_agent = CitationAgent(**agent_kwargs)
         self.validator = ValidatorAgent(**agent_kwargs)
@@ -75,17 +78,17 @@ class EnhancedAgentPipeline:
     async def process_message(
         self,
         user_message: str,
-        conversation_id: Optional[str] = None
+        conversation_id: Optional[str] = None,
+        event_handler: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
     ) -> LegalResponse:
         """
         Process a user message through the enhanced 6-agent pipeline.
 
-        Flow: 전달자 → 검색 → 분석가 → 응답 → 인용 → 검증자
+        Flow: ????��???�분?��?????????증자
         """
 
         start_time = time.time()
 
-        # Get or create conversation context
         if not conversation_id:
             conversation_id = str(uuid.uuid4())
 
@@ -94,52 +97,91 @@ class EnhancedAgentPipeline:
         logger.info(f"Processing message through enhanced pipeline: {user_message[:50]}...")
 
         try:
-            # Add user message to context
             context.user_messages.append(user_message)
 
-            # Check conversation limits
             if len(context.user_messages) > self.max_conversation_turns:
-                return self._generate_limit_exceeded_response(conversation_id)
+                limit_response = self._generate_limit_exceeded_response(conversation_id)
+                await self._emit_event(
+                    event_handler,
+                    "pipeline",
+                    {
+                        "stage": "limit_exceeded",
+                        "response": self._serialize_legal_response(limit_response),
+                        "context": self._summarize_context(context)
+                    }
+                )
+                return limit_response
 
-            # Execute enhanced agent pipeline
             final_response = await self._execute_enhanced_pipeline(
-                user_message, context
+                user_message,
+                context,
+                event_handler=event_handler
             )
 
-            # Store conversation
             self.conversations[conversation_id] = context
 
-            # Set processing time
             final_response.processing_time = time.time() - start_time
+
+            await self._emit_event(
+                event_handler,
+                "pipeline",
+                {
+                    "stage": "completed",
+                    "response": self._serialize_legal_response(final_response),
+                    "context": self._summarize_context(context)
+                }
+            )
 
             logger.info(f"Enhanced pipeline completed in {final_response.processing_time:.2f}s")
             return final_response
 
         except Exception as e:
             logger.error(f"Error in enhanced pipeline: {e}")
-            return self._generate_error_response(user_message, str(e))
+            error_response = self._generate_error_response(user_message, str(e))
+            await self._emit_event(
+                event_handler,
+                "pipeline",
+                {
+                    "stage": "error",
+                    "error": str(e),
+                    "response": self._serialize_legal_response(error_response),
+                    "context": self._summarize_context(context)
+                }
+            )
+            return error_response
 
     async def _execute_enhanced_pipeline(
         self,
         user_message: str,
-        context: ConversationContext
+        context: ConversationContext,
+        event_handler: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
     ) -> LegalResponse:
         """Execute the complete 6-agent pipeline."""
 
-        # Step 1: 전달자 Agent - 의도 파악 및 키워드 추출
+        # Step 1: ????Agent - ???????????추출
         logger.info("Step 1: Facilitator Agent processing")
+        facilitator_input = self._build_agent_input(user_message, context)
         facilitator_response = await self.facilitator.process(user_message, context)
         context.agent_responses.append(facilitator_response)
 
-        # Update context with extracted information
         if facilitator_response.intent:
             context.extracted_intent = facilitator_response.intent
         if facilitator_response.keywords:
             context.extracted_keywords.extend(facilitator_response.keywords)
+            context.extracted_keywords = self._deduplicate_sequence(context.extracted_keywords)
 
-        # Early exit if clarification needed
+        await self._emit_event(
+            event_handler,
+            "facilitator",
+            {
+                "input": facilitator_input,
+                "output": self._summarize_agent_response(facilitator_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
         if facilitator_response.action == AgentAction.REQUEST_CLARIFICATION:
-            return LegalResponse(
+            clarification_response = LegalResponse(
                 answer=facilitator_response.message,
                 sources=[],
                 confidence=facilitator_response.confidence,
@@ -147,47 +189,120 @@ class EnhancedAgentPipeline:
                 follow_up_questions=facilitator_response.clarification_options,
                 query=None
             )
+            await self._emit_event(
+                event_handler,
+                "pipeline",
+                {
+                    "stage": "clarification_needed",
+                    "response": self._serialize_legal_response(clarification_response),
+                    "context": self._summarize_context(context)
+                }
+            )
+            return clarification_response
 
-        # Early exit if conversation continues
         if facilitator_response.action == AgentAction.CONTINUE_CONVERSATION:
-            return LegalResponse(
+            continuation_response = LegalResponse(
                 answer=facilitator_response.message,
                 sources=[],
                 confidence=facilitator_response.confidence,
                 related_keywords=facilitator_response.keywords,
                 follow_up_questions=[
-                    "더 구체적으로 설명해 주시겠어요?",
-                    "어떤 상황에서 이런 문제가 발생했나요?"
+                    "조금 ??구체?????????�주?�겠???",
+                    "????�??????문제가 발생????"
                 ],
                 query=None
             )
+            await self._emit_event(
+                event_handler,
+                "pipeline",
+                {
+                    "stage": "additional_context_required",
+                    "response": self._serialize_legal_response(continuation_response),
+                    "context": self._summarize_context(context)
+                }
+            )
+            return continuation_response
 
-        # Step 2: 검색 Agent - 다중 라운드 검색
+        # Step 2: 검??Agent - 중간 검???보완 검??
         logger.info("Step 2: Search Agent processing")
+        search_input = self._build_agent_input(user_message, context)
         search_response = await self.search_agent.process(user_message, context)
         context.agent_responses.append(search_response)
 
+        await self._emit_event(
+            event_handler,
+            "search",
+            {
+                "input": search_input,
+                "output": self._summarize_agent_response(search_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
         # Step 3: 분석가 Agent - 법적 분석
         logger.info("Step 3: Analyst Agent processing")
+        analysis_input = self._build_agent_input(user_message, context)
         analysis_response = await self.analyst.process(user_message, context)
         context.agent_responses.append(analysis_response)
 
-        # Step 4: 응답 Agent - 답변 내용 생성
+        await self._emit_event(
+            event_handler,
+            "analyst",
+            {
+                "input": analysis_input,
+                "output": self._summarize_agent_response(analysis_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
+        # Step 4: ???Agent - ?? ???
         logger.info("Step 4: Response Agent processing")
+        response_input = self._build_agent_input(user_message, context)
         response_agent_response = await self.response_agent.process(user_message, context)
         context.agent_responses.append(response_agent_response)
 
-        # Step 5: 인용 Agent - 참조를 실제 인용으로 변환
+        await self._emit_event(
+            event_handler,
+            "response",
+            {
+                "input": response_input,
+                "output": self._summarize_agent_response(response_agent_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
+        # Step 5: ???Agent - 참조 ?�?
         logger.info("Step 5: Citation Agent processing")
+        citation_input = self._build_agent_input(user_message, context)
         citation_response = await self.citation_agent.process(user_message, context)
         context.agent_responses.append(citation_response)
 
-        # Step 6: 검증자 Agent - 종합 검증 및 최종 답변 구성
+        await self._emit_event(
+            event_handler,
+            "citation",
+            {
+                "input": citation_input,
+                "output": self._summarize_agent_response(citation_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
+        # Step 6: 검증자 Agent - 종합 검?
         logger.info("Step 6: Validator Agent processing")
+        validator_input = self._build_agent_input(user_message, context)
         validation_response = await self.validator.process(user_message, context)
         context.agent_responses.append(validation_response)
 
-        # Extract final response information
+        await self._emit_event(
+            event_handler,
+            "validator",
+            {
+                "input": validator_input,
+                "output": self._summarize_agent_response(validation_response),
+                "context": self._summarize_context(context)
+            }
+        )
+
         final_answer = validation_response.message
         sources = self._extract_sources(context)
         confidence = validation_response.confidence
@@ -203,6 +318,139 @@ class EnhancedAgentPipeline:
             query=None
         )
 
+    async def _emit_event(
+        self,
+        handler: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]],
+        agent: str,
+        payload: Dict[str, Any]
+    ) -> None:
+        if not handler:
+            return
+
+        event_payload = dict(payload) if isinstance(payload, dict) else {"value": payload}
+        event_payload.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+
+        try:
+            result = handler(agent, event_payload)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.warning(f"Event handler error for {agent}: {exc}")
+
+    def _build_agent_input(self, user_message: str, context: ConversationContext) -> Dict[str, Any]:
+        return {
+            "user_message": user_message,
+            "intent": context.extracted_intent,
+            "keywords": context.extracted_keywords[-10:],
+            "context": self._summarize_context(context)
+        }
+
+    def _summarize_context(self, context: ConversationContext) -> Dict[str, Any]:
+        return {
+            "conversation_id": context.conversation_id,
+            "turn_count": len(context.user_messages),
+            "recent_user_messages": context.user_messages[-3:],
+            "recent_agent_actions": [
+                response.action.value for response in context.agent_responses[-3:]
+            ],
+            "extracted_intent": context.extracted_intent,
+            "extracted_keywords": context.extracted_keywords[-10:]
+        }
+
+    def _summarize_agent_response(self, response: AgentResponse) -> Dict[str, Any]:
+        summary = {
+            "action": response.action.value,
+            "message": response.message,
+            "intent": response.intent,
+            "keywords": response.keywords,
+            "confidence": response.confidence,
+        }
+        if response.clarification_options:
+            summary["clarification_options"] = response.clarification_options
+        if response.metadata:
+            summary["metadata"] = self._summarize_metadata(response.metadata)
+        return summary
+
+    def _summarize_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: self._serialize_value(value) for key, value in metadata.items()}
+
+    def _serialize_value(self, value: Any):
+        if isinstance(value, SearchResults):
+            return self._serialize_search_results(value)
+        if isinstance(value, BaseModel):
+            return value.model_dump(mode="json")
+        if is_dataclass(value):
+            return asdict(value)
+        if isinstance(value, dict):
+            return {key: self._serialize_value(val) for key, val in list(value.items())[:10]}
+        if isinstance(value, (list, tuple)):
+            return [self._serialize_value(item) for item in list(value)[:5]]
+        if hasattr(value, "__dict__"):
+            return {key: self._serialize_value(val) for key, val in list(vars(value).items())[:10]}
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    def _serialize_search_results(self, results: SearchResults) -> Dict[str, Any]:
+        return {
+            "total_count": results.total_count,
+            "internal_count": len(results.internal_results),
+            "external_count": len(results.external_results),
+            "search_duration": results.search_duration,
+            "top_results": [
+                {
+                    "title": item.title,
+                    "url": item.source.url,
+                    "source_type": item.source.source_type.value
+                    if hasattr(item.source.source_type, "value")
+                    else str(item.source.source_type),
+                    "relevance_score": item.relevance_score,
+                }
+                for item in results.get_all_results()[:3]
+            ],
+        }
+
+    def _serialize_legal_response(self, response: LegalResponse) -> Dict[str, Any]:
+        return {
+            "answer": response.answer,
+            "sources": [
+                {
+                    "title": source.title,
+                    "url": source.url,
+                    "source_type": source.source_type.value
+                    if hasattr(source.source_type, "value")
+                    else str(source.source_type),
+                    "confidence": source.confidence,
+                    "excerpt": source.excerpt,
+                    "date": source.date.isoformat() if source.date else None,
+                }
+                for source in response.sources[:5]
+            ],
+            "confidence": response.confidence,
+            "related_keywords": response.related_keywords,
+            "follow_up_questions": response.follow_up_questions,
+            "processing_time": response.processing_time,
+        }
+
+    @staticmethod
+    def _deduplicate_sequence(items: List[str]) -> List[str]:
+        seen: set[str] = set()
+        deduplicated: List[str] = []
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                deduplicated.append(item)
+        return deduplicated
+
+
+    def _map_citation_type_to_source_type(self, citation_type: str) -> SourceType:
+        mapping = {
+            "statute": SourceType.EXTERNAL_LAW,
+            "precedent": SourceType.EXTERNAL_PRECEDENT,
+            "administrative": SourceType.EXTERNAL_GENERAL,
+        }
+        return mapping.get(citation_type, SourceType.EXTERNAL_GENERAL)
+
     def _extract_sources(self, context: ConversationContext) -> list[SearchSource]:
         """Extract sources from context."""
         sources = []
@@ -216,7 +464,7 @@ class EnhancedAgentPipeline:
                         source = SearchSource(
                             url=citation.source_url,
                             title=citation.title,
-                            source_type=citation.citation_type,
+                            source_type=self._map_citation_type_to_source_type(citation.citation_type),
                             confidence=0.8,
                             excerpt=citation.content[:150]
                         )
@@ -262,13 +510,13 @@ class EnhancedAgentPipeline:
             intent = context.extracted_intent.lower()
             if "법령" in intent:
                 follow_ups.extend([
-                    "이 법령의 시행령이나 시행규칙도 확인하고 싶으신가요?",
-                    "관련 판례도 함께 찾아보시겠습니까?"
+                    "??법령??????????�규�?????�???????",
+                    "관???????�?찾아보시겠습?�?"
                 ])
-            elif "판례" in intent:
+            elif "??" in intent:
                 follow_ups.extend([
-                    "비슷한 사안의 다른 판례도 확인하시겠습니까?",
-                    "최신 법령 개정사항도 함께 검토하시겠습니까?"
+                    "비슷???????�?????????�겠??�?",
+                    "최신 법령 개정?????�?검???�???"
                 ])
 
         return follow_ups[:4]  # Limit to 4
@@ -291,12 +539,12 @@ class EnhancedAgentPipeline:
                 "max_conversation_turns": self.max_conversation_turns
             },
             "agents": {
-                "facilitator": {"status": "operational", "role": "의도파악/키워드추출"},
-                "search": {"status": "operational", "role": "다중라운드검색"},
-                "analyst": {"status": "operational", "role": "법적분석/쟁점식별"},
-                "response": {"status": "operational", "role": "답변내용생성"},
-                "citation": {"status": "operational", "role": "인용/출처관리"},
-                "validator": {"status": "operational", "role": "종합검증/품질관리"}
+                "facilitator": {"status": "operational", "role": "?????????"},
+                "search": {"status": "operational", "role": "?????????"},
+                "analyst": {"status": "operational", "role": "법적분석/?????"},
+                "response": {"status": "operational", "role": "???????"},
+                "citation": {"status": "operational", "role": "???출처관?"},
+                "validator": {"status": "operational", "role": "종합검??질???"}
             },
             "search": search_status
         }
@@ -334,14 +582,14 @@ class EnhancedAgentPipeline:
     def _generate_limit_exceeded_response(self, conversation_id: str) -> LegalResponse:
         """Generate response when conversation limit is exceeded."""
         return LegalResponse(
-            answer=f"""이 대화는 최대 턴 수({self.max_conversation_turns})에 도달했습니다.
+            answer=f"""??????�? ????{self.max_conversation_turns})?????????
 
-새로운 질문이 있으시면 새 대화를 시작해 주세요.
+?�??질문?????�?????? ????주세??
 
-이전 대화에서 충분한 정보를 얻지 못하셨다면:
-- 더 구체적인 질문으로 새 대화를 시작하세요
-- 관련 법령명이나 조문을 포함해서 질문해 보세요
-- 필요시 전문가와 직접 상담하시기 바랍니다""",
+????????충분???�??? 못하???
+- ??구체???질문?�?????? ??????
+- 관??법령명이??조문???????질문??보세??
+- ?????문�?? 직접 ?????바랍???"",
             sources=[],
             confidence=0.0,
             related_keywords=[],
@@ -352,22 +600,22 @@ class EnhancedAgentPipeline:
     def _generate_error_response(self, user_message: str, error: str) -> LegalResponse:
         """Generate error response."""
         return LegalResponse(
-            answer=f"""죄송합니다. 고도화된 법률 분석 과정에서 오류가 발생했습니다.
+            answer=f"""Sorry, an error occurred in the enhanced legal analysis process.
 
-오류 내용: {error}
+Error: {error}
 
-다음을 시도해 보세요:
-- 질문을 다시 입력해 보세요
-- 더 간단한 형태로 질문해 보세요
-- 잠시 후 다시 시도해 보세요
+Please try again:
+- Rephrase your question
+- Use simpler language
+- Try different keywords
 
-지속적인 문제가 발생하면 관리자에게 문의하시기 바랍니다.""",
+Contact administrator if problem persists.""",
             sources=[],
             confidence=0.0,
             related_keywords=[],
             follow_up_questions=[
-                "다시 시도해 보시겠습니까?",
-                "다른 방식으로 질문해 보시겠습니까?"
+                "Would you like to try a different approach?",
+                "Can you rephrase your question?"
             ],
             query=None
         )

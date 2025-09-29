@@ -1,39 +1,77 @@
-'use client';
+﻿'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Message, AssistantMessage } from '@/lib/types';
-import SearchBar from '@/components/search-bar';
+
+import AgentEventList from '@/components/agent-event-list';
 import AnswerCard from '@/components/answer-card';
+import SearchBar from '@/components/search-bar';
 import { LoadingComponent, WelcomeComponent } from '@/components/state-templates';
 import { Card, CardContent } from '@/components/ui/card';
+import { AgentEvent, AssistantMessage, Message } from '@/lib/types';
 
-// Mock Assistant Response
 const createMockResponse = (query: string): AssistantMessage => ({
-  summary: `'${query}'에 대한 답변입니다. 개인정보보호법 제15조(개인정보의 수집·이용)에 따르면, 정보주체의 동의를 받은 경우에만 개인정보를 수집할 수 있으며, 그 수집 목적의 범위에서 이용할 수 있습니다. 이는 정보주체의 권리를 보장하기 위한 핵심적인 조항입니다.`,
+  summary: `'${query}'에 대한 정식 답변을 생성하는 중 문제가 발생했습니다. 이 예시는 서비스 복구 전까지 임시로 제공되는 기본 응답입니다.`,
   citations: [
     {
-      source_name: '개인정보보호법 제15조',
-      description: '개인정보의 수집·이용에 관한 조항입니다.',
-      link: 'https://www.law.go.kr/LSW/lsInfoP.do?lsId=008032&chrClsCd=010202&urlMode=lsInfoP&efYd=20230915#0000',
-    },
-    {
-      source_name: '관련 판례 2022다12345',
-      description: '개인정보 수집 동의의 유효 요건에 대한 대법원 판례입니다.',
-      link: '#',
+      source_name: '개인정보보호법 제5조',
+      description: '개인정보 보호 기본 원칙을 규정한 조문입니다.',
+      link: 'https://www.law.go.kr/LSW/lsInfoP.do?lsId=008032',
     },
   ],
   followUps: [
-    '개인정보의 제3자 제공 요건은?',
-    '마케팅 목적으로 개인정보를 사용하려면?',
-    '주민등록번호 처리 기준에 대해 알려줘',
+    '조금 더 구체적인 사실관계를 알려주실 수 있나요?',
+    '관련된 판례나 사건 번호를 알고 계시면 함께 알려주세요.',
   ],
+  confidence: 0,
+  agentTrail: [],
 });
 
-export default function ChatPage() {
+const mapFinalResponseToAssistantMessage = (
+  finalResponse: Record<string, unknown>,
+  agentTrail: AgentEvent[],
+): AssistantMessage => {
+  const sources = Array.isArray(finalResponse.sources) ? finalResponse.sources : [];
+  const followUps = Array.isArray(finalResponse.followUps) ? finalResponse.followUps : [];
+  const relatedKeywords = Array.isArray(finalResponse.related_keywords)
+    ? (finalResponse.related_keywords as string[])
+    : undefined;
+
+  return {
+    summary: String(finalResponse.answer ?? ''),
+    citations: sources.map((source: Record<string, unknown>) => ({
+      source_name: String(source?.source_name ?? source?.title ?? '출처 미상'),
+      description: String(source?.description ?? source?.excerpt ?? ''),
+      link: String(source?.link ?? source?.url ?? '#'),
+      confidence: typeof source?.confidence === 'number' ? source.confidence : undefined,
+    })),
+    followUps: followUps.map((item: unknown) => String(item)),
+    confidence: typeof finalResponse.confidence === 'number' ? finalResponse.confidence : undefined,
+    processingTime:
+      typeof finalResponse.processing_time === 'number' ? finalResponse.processing_time : undefined,
+    relatedKeywords,
+    agentTrail,
+  };
+};
+
+const normalizeAgentEvent = (event: Record<string, unknown>): AgentEvent => {
+  const payload = (event?.payload ?? {}) as Record<string, unknown>;
+  const timestamp = typeof payload.timestamp === 'string' ? payload.timestamp : undefined;
+
+  return {
+    type: String(event?.type ?? 'agent_step'),
+    agent: String(event?.agent ?? 'unknown'),
+    payload,
+    timestamp,
+  };
+};
+
+function ChatPageContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [currentAgentTrail, setCurrentAgentTrail] = useState<AgentEvent[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasProcessedInitialQuery = useRef(false);
   const searchParams = useSearchParams();
@@ -46,110 +84,185 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  // Handle initial query from URL parameters
+  useEffect(() => {
+    if (currentAgentTrail.length > 0) {
+      scrollToBottom();
+    }
+  }, [currentAgentTrail]);
+
   useEffect(() => {
     const initialQuery = searchParams.get('query');
     if (initialQuery && !hasProcessedInitialQuery.current) {
       hasProcessedInitialQuery.current = true;
-      setQuery(initialQuery);
 
-      // Auto-submit the query
       setTimeout(() => {
+        const cleanedQuery = initialQuery.trim();
+        if (!cleanedQuery) return;
+
         const userMessage: Message = {
           id: Date.now().toString(),
           role: 'user',
-          content: initialQuery.trim(),
+          content: cleanedQuery,
         };
 
-        setMessages([userMessage]);
+        const history = [userMessage];
+        setMessages(history);
         setQuery('');
         setIsLoading(true);
-        handleAPICall(initialQuery.trim());
-      }, 100);
+        void handleAPICall(cleanedQuery, history);
+      }, 120);
     }
   }, [searchParams]);
 
-  const handleAPICall = async (queryText: string) => {
+  const handleAPICall = async (queryText: string, history: Message[]) => {
+    setCurrentAgentTrail([]);
+    let assistantMessageId: string | null = null;
+
     try {
-      // Build conversation history for API
       const conversationMessages = [
         {
           role: 'system',
-          content: '당신은 한국의 법률 전문가입니다. 사용자의 법률 관련 질문에 정확하고 도움이 되는 답변을 제공해주세요. 관련 법령이나 판례가 있다면 인용해주세요.',
+          content:
+            '당신은 한국 법률 질의를 지원하는 전문 LLM입니다. 질문의 맥락과 의도를 정확히 파악하고, 필요한 근거와 함께 신뢰도 있는 답변을 제공합니다.',
         },
-        // Include previous conversation history
-        ...messages.map(msg => ({
+        ...history.map((msg) => ({
           role: msg.role,
-          content: typeof msg.content === 'string' ? msg.content : msg.content.summary || ''
+          content: typeof msg.content === 'string' ? msg.content : msg.content.summary,
         })),
-        {
-          role: 'user',
-          content: queryText,
-        },
       ];
 
-      // Call actual API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messages: conversationMessages,
-        }),
+        body: JSON.stringify({ messages: conversationMessages }),
       });
 
-      if (!response.ok) {
-        throw new Error('API 호출 실패');
+      if (!response.ok || !response.body) {
+        throw new Error(`API 호출 실패: ${response.status} ${response.statusText}`);
       }
 
-      // Read the streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('응답을 읽을 수 없습니다');
-      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      assistantMessageId = (Date.now() + 1).toString();
 
-      let accumulatedContent = '';
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: assistantMessageId,
         role: 'assistant',
         content: '',
       };
-
-      // Add empty assistant message first
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Read the stream
-      while (true) {
+      let buffer = '';
+      let partialAnswer = '';
+      const localTrail: AgentEvent[] = [];
+      let streamCompleted = false;
+
+      const flushLine = (line: string) => {
+        if (!line.trim() || streamCompleted) return;
+
+        try {
+          const parsed = JSON.parse(line);
+          const eventType = parsed.type;
+
+          if (eventType === 'agent_step' || eventType === 'pipeline') {
+            const normalized = normalizeAgentEvent(parsed);
+            localTrail.push(normalized);
+            setCurrentAgentTrail([...localTrail]);
+            return;
+          }
+
+          if (eventType === 'content') {
+            if (typeof parsed.content === 'string') {
+              partialAnswer += parsed.content;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, content: partialAnswer }
+                    : msg
+                )
+              );
+            }
+            return;
+          }
+
+          if (eventType === 'complete') {
+            const finalResponse = parsed.final_response ?? {};
+            const assistantPayload = mapFinalResponseToAssistantMessage(finalResponse, [...localTrail]);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: assistantPayload }
+                  : msg
+              )
+            );
+            setCurrentAgentTrail([]);
+            streamCompleted = true;
+            return;
+          }
+
+          if (eventType === 'error') {
+            const errorMessage = String(parsed.error ?? 'Agent 파이프라인 처리 중 오류가 발생했습니다.');
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: errorMessage }
+                  : msg
+              )
+            );
+            setCurrentAgentTrail([]);
+            streamCompleted = true;
+            return;
+          }
+        } catch (error) {
+          console.error('Streaming chunk parsing failed:', error, line);
+        }
+      };
+
+      while (!streamCompleted) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
-        const chunk = new TextDecoder().decode(value);
-        accumulatedContent += chunk;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
 
-        // Update the assistant message with accumulated content
+        for (const line of lines) {
+          flushLine(line);
+        }
+      }
+
+      if (!streamCompleted && buffer.trim().length > 0) {
+        flushLine(buffer);
+      }
+    } catch (error) {
+      console.error('API 스트림 처리 오류:', error);
+      const assistantResponse = createMockResponse(queryText);
+
+      if (assistantMessageId) {
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === assistantMessage.id
-              ? { ...msg, content: accumulatedContent }
+            msg.id === assistantMessageId
+              ? { ...msg, content: assistantResponse }
               : msg
           )
         );
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: assistantResponse,
+          },
+        ]);
       }
-
+    } finally {
       setIsLoading(false);
-    } catch (error) {
-      console.error('API 호출 에러:', error);
-      setIsLoading(false);
-
-      // Fallback to mock response on error
-      const assistantResponse = createMockResponse(queryText);
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: assistantResponse,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setCurrentAgentTrail([]);
     }
   };
 
@@ -157,32 +270,28 @@ export default function ChatPage() {
     e.preventDefault();
     if (!query.trim() || isLoading) return;
 
+    const cleanedQuery = query.trim();
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: query.trim(),
+      content: cleanedQuery,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    const currentQuery = query.trim();
+    const history = [...messages, userMessage];
+    setMessages(history);
     setQuery('');
     setIsLoading(true);
 
-    await handleAPICall(currentQuery);
+    await handleAPICall(cleanedQuery, history);
   };
 
   const handleFollowUpClick = (question: string) => {
-    // This will trigger a new search
     setQuery(question);
-    // We can't submit a form from here, so we'll just set the query
-    // and let the user press enter. A more advanced implementation
-    // would trigger the submission flow directly.
     document.getElementById('main-search-bar')?.focus();
   };
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Chat Messages Area */}
       <div className="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-16">
@@ -205,7 +314,7 @@ export default function ChatPage() {
                   <div className="max-w-3xl">
                     <Card className="bg-primary text-primary-foreground border-0">
                       <CardContent className="p-4">
-                        <p className="text-sm font-medium">{msg.content as string}</p>
+                        <p className="text-sm font-medium whitespace-pre-wrap">{msg.content as string}</p>
                       </CardContent>
                     </Card>
                   </div>
@@ -232,6 +341,12 @@ export default function ChatPage() {
           ))}
         </div>
 
+        {isLoading && currentAgentTrail.length > 0 && (
+          <div className="mt-8">
+            <AgentEventList events={currentAgentTrail} title="실시간 에이전트 진행 상황" />
+          </div>
+        )}
+
         {isLoading && (
           <div className="mt-8">
             <LoadingComponent />
@@ -240,7 +355,6 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Fixed Search Bar at Bottom (only when there are messages) */}
       {messages.length > 0 && (
         <div className="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t border-border p-4">
           <div className="max-w-3xl mx-auto">
@@ -253,5 +367,13 @@ export default function ChatPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
+// import { useToast } from '@/hooks/use-toast';
 
 // 6개 에이전트의 초기 설정
 const initialAgentConfigs = {
@@ -25,7 +26,10 @@ const initialAgentConfigs = {
 
 응답 형식은 간결하고 명확하게 작성하세요.`,
     temperature: 0.3,
-    maxTokens: 1000
+    maxTokens: 1000,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   },
   search: {
     name: '검색자 (Search)',
@@ -41,7 +45,10 @@ const initialAgentConfigs = {
 
 정확하고 포괄적인 검색 결과를 제공하세요.`,
     temperature: 0.2,
-    maxTokens: 1200
+    maxTokens: 1200,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   },
   analyst: {
     name: '분석가 (Analyst)',
@@ -57,7 +64,10 @@ const initialAgentConfigs = {
 
 논리적이고 체계적인 분석을 제공하세요.`,
     temperature: 0.4,
-    maxTokens: 1500
+    maxTokens: 1500,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   },
   response: {
     name: '응답자 (Response)',
@@ -73,7 +83,10 @@ const initialAgentConfigs = {
 
 명확하고 이해하기 쉬운 언어로 답변하세요.`,
     temperature: 0.5,
-    maxTokens: 2000
+    maxTokens: 2000,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   },
   citation: {
     name: '인용자 (Citation)',
@@ -89,7 +102,10 @@ const initialAgentConfigs = {
 
 정확하고 체계적인 인용 형식을 유지하세요.`,
     temperature: 0.1,
-    maxTokens: 800
+    maxTokens: 800,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   },
   validator: {
     name: '검증자 (Validator)',
@@ -105,11 +121,15 @@ const initialAgentConfigs = {
 
 높은 품질 기준을 유지하며 객관적으로 검증하세요.`,
     temperature: 0.2,
-    maxTokens: 1000
+    maxTokens: 1000,
+    topP: 1.0,
+    frequencyPenalty: 0.0,
+    presencePenalty: 0.0
   }
 };
 
 const LlmAdminPage: FC = () => {
+  // const { toast } = useToast();
   const [agentConfigs, setAgentConfigs] = useState(initialAgentConfigs);
   const [activeAgent, setActiveAgent] = useState<keyof typeof initialAgentConfigs>('facilitator');
   const [globalSettings, setGlobalSettings] = useState({
@@ -118,6 +138,8 @@ const LlmAdminPage: FC = () => {
     timeout: 30,
     enableLogging: true
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const availableModels = [
     { value: 'gpt-4', label: 'GPT-4' },
@@ -128,7 +150,7 @@ const LlmAdminPage: FC = () => {
     { value: 'claude-3-haiku', label: 'Claude 3 Haiku' }
   ];
 
-  const updateAgentConfig = (agentKey: keyof typeof agentConfigs, field: string, value: any) => {
+  const updateAgentConfig = (agentKey: keyof typeof agentConfigs, field: string, value: unknown) => {
     setAgentConfigs(prev => ({
       ...prev,
       [agentKey]: {
@@ -138,13 +160,101 @@ const LlmAdminPage: FC = () => {
     }));
   };
 
-  const resetToDefaults = () => {
-    setAgentConfigs(initialAgentConfigs);
+  // Load configurations from backend
+  const loadConfigurations = async () => {
+    setIsLoading(true);
+    try {
+      const [agentConfigsResponse, globalSettingsResponse] = await Promise.all([
+        fetch('http://localhost:8001/admin/agent-configs'),
+        fetch('http://localhost:8001/admin/global-settings')
+      ]);
+
+      if (agentConfigsResponse.ok && globalSettingsResponse.ok) {
+        const agentConfigsData = await agentConfigsResponse.json();
+        const globalSettingsData = await globalSettingsResponse.json();
+
+        if (agentConfigsData.success) {
+          setAgentConfigs(agentConfigsData.data);
+        }
+        if (globalSettingsData.success) {
+          setGlobalSettings(globalSettingsData.data);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load configurations:', error);
+      alert('서버에서 설정을 불러오는데 실패했습니다. 기본 설정을 사용합니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load configurations on mount
+  useEffect(() => {
+    loadConfigurations();
+  }, []);
+
+  const resetToDefaults = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:8001/admin/reset-to-defaults', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAgentConfigs(data.data.agentConfigs);
+          setGlobalSettings(data.data.globalSettings);
+          alert('초기화 완료: ' + data.message);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to reset to defaults:', error);
+      alert('설정을 초기화하는데 실패했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const saveConfigurations = async () => {
-    // TODO: API 호출로 설정 저장
-    console.log('Saving configurations:', agentConfigs);
+    setIsSaving(true);
+    try {
+      const [agentConfigsResponse, globalSettingsResponse] = await Promise.all([
+        fetch('http://localhost:8001/admin/agent-configs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(agentConfigs)
+        }),
+        fetch('http://localhost:8001/admin/global-settings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(globalSettings)
+        })
+      ]);
+
+      if (agentConfigsResponse.ok && globalSettingsResponse.ok) {
+        const agentConfigsData = await agentConfigsResponse.json();
+        const globalSettingsData = await globalSettingsResponse.json();
+
+        if (agentConfigsData.success && globalSettingsData.success) {
+          alert('설정이 성공적으로 저장되었습니다.');
+        }
+      } else {
+        throw new Error('Failed to save configurations');
+      }
+    } catch (error) {
+      console.error('Failed to save configurations:', error);
+      alert('설정을 저장하는데 실패했습니다.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -156,11 +266,18 @@ const LlmAdminPage: FC = () => {
           <p className="text-muted-foreground mt-2">6단계 법률 AI 에이전트의 시스템 프롬프트와 설정을 관리합니다.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={resetToDefaults}>
-            기본값 복원
+          <Button
+            variant="outline"
+            onClick={resetToDefaults}
+            disabled={isLoading}
+          >
+            {isLoading ? '처리 중...' : '기본값 복원'}
           </Button>
-          <Button onClick={saveConfigurations}>
-            설정 저장
+          <Button
+            onClick={saveConfigurations}
+            disabled={isSaving || isLoading}
+          >
+            {isSaving ? '저장 중...' : '설정 저장'}
           </Button>
         </div>
       </div>
@@ -265,6 +382,57 @@ const LlmAdminPage: FC = () => {
                 max={4000}
               />
             </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">
+                Top P: {agentConfigs[activeAgent].topP}
+              </label>
+              <Slider
+                value={[agentConfigs[activeAgent].topP]}
+                onValueChange={(value) => updateAgentConfig(activeAgent, 'topP', value[0])}
+                max={1}
+                min={0}
+                step={0.1}
+                className="mt-2"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>결정적 (0)</span>
+                <span>다양한 (1)</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">
+                Frequency Penalty: {agentConfigs[activeAgent].frequencyPenalty}
+              </label>
+              <Slider
+                value={[agentConfigs[activeAgent].frequencyPenalty]}
+                onValueChange={(value) => updateAgentConfig(activeAgent, 'frequencyPenalty', value[0])}
+                max={2}
+                min={-2}
+                step={0.1}
+                className="mt-2"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>반복 증가 (-2)</span>
+                <span>반복 억제 (2)</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">
+                Presence Penalty: {agentConfigs[activeAgent].presencePenalty}
+              </label>
+              <Slider
+                value={[agentConfigs[activeAgent].presencePenalty]}
+                onValueChange={(value) => updateAgentConfig(activeAgent, 'presencePenalty', value[0])}
+                max={2}
+                min={-2}
+                step={0.1}
+                className="mt-2"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>주제 재반복 (-2)</span>
+                <span>새 주제 탐색 (2)</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -279,6 +447,7 @@ const LlmAdminPage: FC = () => {
               <Select
                 value={globalSettings.defaultModel}
                 onValueChange={(value) => setGlobalSettings(prev => ({ ...prev, defaultModel: value }))}
+                disabled={isLoading}
               >
                 <SelectTrigger className="mt-2">
                   <SelectValue />
@@ -301,6 +470,7 @@ const LlmAdminPage: FC = () => {
                 className="mt-2"
                 min={1}
                 max={10}
+                disabled={isLoading}
               />
             </div>
             <div>
@@ -312,6 +482,7 @@ const LlmAdminPage: FC = () => {
                 className="mt-2"
                 min={10}
                 max={120}
+                disabled={isLoading}
               />
             </div>
           </CardContent>
@@ -342,7 +513,9 @@ const LlmAdminPage: FC = () => {
                 </div>
                 <div className="text-right">
                   <Badge variant="outline" className="text-xs">{config.model}</Badge>
-                  <div className="text-xs text-muted-foreground mt-1">T: {config.temperature}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    T: {config.temperature} | P: {config.topP}
+                  </div>
                 </div>
               </div>
             ))}
