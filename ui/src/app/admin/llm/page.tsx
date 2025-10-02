@@ -165,8 +165,8 @@ const LlmAdminPage: FC = () => {
     setIsLoading(true);
     try {
       const [agentConfigsResponse, globalSettingsResponse] = await Promise.all([
-        fetch('http://localhost:8001/admin/agent-configs'),
-        fetch('http://localhost:8001/admin/global-settings')
+        fetch('http://localhost:8004/admin/agent-configs'),
+        fetch('http://localhost:8004/admin/global-settings')
       ]);
 
       if (agentConfigsResponse.ok && globalSettingsResponse.ok) {
@@ -196,7 +196,7 @@ const LlmAdminPage: FC = () => {
   const resetToDefaults = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:8001/admin/reset-to-defaults', {
+      const response = await fetch('http://localhost:8004/admin/reset-to-defaults', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -223,14 +223,14 @@ const LlmAdminPage: FC = () => {
     setIsSaving(true);
     try {
       const [agentConfigsResponse, globalSettingsResponse] = await Promise.all([
-        fetch('http://localhost:8001/admin/agent-configs', {
+        fetch('http://localhost:8004/admin/agent-configs', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(agentConfigs)
         }),
-        fetch('http://localhost:8001/admin/global-settings', {
+        fetch('http://localhost:8004/admin/global-settings', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

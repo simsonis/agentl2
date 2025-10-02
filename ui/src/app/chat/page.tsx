@@ -71,6 +71,7 @@ function ChatPageContent() {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentAgentTrail, setCurrentAgentTrail] = useState<AgentEvent[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasProcessedInitialQuery = useRef(false);
@@ -118,6 +119,13 @@ function ChatPageContent() {
     setCurrentAgentTrail([]);
     let assistantMessageId: string | null = null;
 
+    // Generate conversation ID on first message
+    let currentConversationId = conversationId;
+    if (!currentConversationId) {
+      currentConversationId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+      setConversationId(currentConversationId);
+    }
+
     try {
       const conversationMessages = [
         {
@@ -136,7 +144,10 @@ function ChatPageContent() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: conversationMessages }),
+        body: JSON.stringify({
+          messages: conversationMessages,
+          conversation_id: currentConversationId
+        }),
       });
 
       if (!response.ok || !response.body) {

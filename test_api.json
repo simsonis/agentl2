@@ -1,0 +1,9 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "개인정보보호법에 대해 알려주세요"
+    }
+  ],
+  "conversation_id": "test-123"
+}

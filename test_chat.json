@@ -1,0 +1,9 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "개인정보보호법 제15조에 대해 알려줘"
+    }
+  ],
+  "conversation_id": "test-123"
+}

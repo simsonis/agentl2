@@ -1,0 +1,6 @@
+{
+  "defaultModel": "gpt-4",
+  "maxRetries": 3,
+  "timeout": 30,
+  "enableLogging": true
+}

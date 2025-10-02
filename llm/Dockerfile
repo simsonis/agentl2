@@ -27,11 +27,11 @@ RUN poetry install --only=main --no-root
 COPY . .
 
 # Expose port
-EXPOSE 8001
+EXPOSE 8004
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+    CMD curl -f http://localhost:8004/health || exit 1
 
 # Run the FastAPI server
-CMD ["uvicorn", "simple_server:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "real_agent_server.py"]
