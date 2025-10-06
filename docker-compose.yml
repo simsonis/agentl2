@@ -83,7 +83,7 @@ services:
     depends_on:
       - collector
     ports:
-      - "8004:8004"
+      - "8001:8001"
     restart: unless-stopped
     env_file:
       - .env
@@ -94,7 +94,7 @@ services:
       - ./llm:/app
     command: ["python", "real_agent_server.py"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -114,7 +114,7 @@ services:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LLM_SERVICE_URL=http://llm:8004
+      - LLM_SERVICE_URL=http://llm:8001
 
 volumes:
   pg_data:

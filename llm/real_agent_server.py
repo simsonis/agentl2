@@ -233,7 +233,7 @@ async def process_with_streaming(
     """Process message through enhanced agent pipeline with streaming updates."""
 
     if not pipeline:
-        yield f"data: {json.dumps({'type': 'error', 'error': 'Agent pipeline not initialized'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'error': 'Agent pipeline not initialized'}, ensure_ascii=False)}\n\n"
         return
 
     event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
@@ -317,7 +317,12 @@ async def chat_stream(request: ChatRequest):
     user_message = ""
     for message in reversed(request.messages):
         if message.get("role") == "user":
-            user_message = message.get("content", "")
+            content = message.get("content", "")
+            # Ensure UTF-8 encoding
+            if isinstance(content, bytes):
+                user_message = content.decode('utf-8')
+            else:
+                user_message = str(content)
             break
 
     if not user_message:

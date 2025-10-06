@@ -3,13 +3,22 @@ FROM python:3.11-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    locales \
     && rm -rf /var/lib/apt/lists/*
+
+# Set locale to UTF-8
+RUN sed -i '/ko_KR.UTF-8/s/^# //g' /etc/locale.gen && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
 
 # Set working directory
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
+ENV PYTHONIOENCODING=utf-8
+ENV LANG=ko_KR.UTF-8
+ENV LC_ALL=ko_KR.UTF-8
 
 # Install Poetry
 RUN pip install poetry
@@ -27,11 +36,11 @@ RUN poetry install --only=main --no-root
 COPY . .
 
 # Expose port
-EXPOSE 8004
+EXPOSE 8001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8004/health || exit 1
+    CMD curl -f http://localhost:8001/health || exit 1
 
 # Run the FastAPI server
 CMD ["python", "real_agent_server.py"]

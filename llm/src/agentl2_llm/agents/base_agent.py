@@ -99,6 +99,10 @@ class BaseAgent(ABC):
         """Build conversation history for LLM context."""
         messages = [{"role": "system", "content": self.system_prompt}]
 
+        priority_context = self._build_priority_context_message(context)
+        if priority_context:
+            messages.append({"role": "system", "content": priority_context})
+
         # Add conversation history
         for i, (user_msg, agent_resp) in enumerate(
             zip(context.user_messages, context.agent_responses)
@@ -107,7 +111,30 @@ class BaseAgent(ABC):
             if agent_resp.message:
                 messages.append({"role": "assistant", "content": agent_resp.message})
 
+
         return messages
+
+    def _build_priority_context_message(self, context: ConversationContext) -> str:
+        """Construct a high-priority context summary for the LLM."""
+        priority_memory = context.session_metadata.get("priority_memory", {}) if context.session_metadata else {}
+
+        intents = priority_memory.get("intents") or ([] if not context.extracted_intent else [context.extracted_intent])
+        keywords = priority_memory.get("keywords") or context.extracted_keywords
+
+        lines: List[str] = []
+        if intents:
+            lines.append(f"최신 의도: {intents[0]}")
+            if len(intents) > 1:
+                lines.append("보조 의도 후보: " + "; ".join(intents[1:3]))
+
+        if keywords:
+            lines.append("핵심 키워드: " + ", ".join(keywords[:6]))
+
+        if not lines:
+            return ""
+
+        return "최근 대화 맥락 요약(반드시 참조):\n" + "\n".join(f"- {line}" for line in lines)
+
 
     def _parse_structured_response(self, llm_response: str) -> Dict[str, Any]:
         """Parse structured response from LLM."""

@@ -1,12 +1,14 @@
 """
 Enhanced Agent-based pipeline with comprehensive legal analysis.
 """
+# -*- coding: utf-8 -*-
 
 from __future__ import annotations
 
 import time
 import uuid
 import inspect
+from dataclasses import is_dataclass, asdict
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable, Awaitable, List
 
@@ -27,8 +29,8 @@ from ..models import LegalResponse, SearchSource, SearchResults, SourceType
 
 class EnhancedAgentPipeline:
     """
-    ???????????????- 6??�?????????
-    ??????검????분석가 ????????????검증자
+    향상된 에이전트 파이프라인 - 6단계 전문 에이전트 체계
+    전달자 → 검색자 → 분석가 → 응답자 → 인용자 → 검증자
     """
 
     def __init__(
@@ -51,7 +53,7 @@ class EnhancedAgentPipeline:
             "temperature": temperature
         }
 
-        # 기존 ??????
+        # 기존 에이전트
         self.facilitator = FacilitatorAgent(**agent_kwargs)
         self.search_agent = SearchAgent(
             search_coordinator=self.search_coordinator,
@@ -59,7 +61,7 @@ class EnhancedAgentPipeline:
         )
         self.response_agent = ResponseAgent(**agent_kwargs)
 
-        # ?�????????
+        # 확장 에이전트
         self.analyst = AnalystAgent(**agent_kwargs)
         self.citation_agent = CitationAgent(**agent_kwargs)
         self.validator = ValidatorAgent(**agent_kwargs)
@@ -84,7 +86,7 @@ class EnhancedAgentPipeline:
         """
         Process a user message through the enhanced 6-agent pipeline.
 
-        Flow: ????��???�분?��?????????증자
+        Flow: 전달자 → 검색자 → 분석가 → 응답자 → 인용자 → 검증자
         """
 
         start_time = time.time()
@@ -158,17 +160,13 @@ class EnhancedAgentPipeline:
     ) -> LegalResponse:
         """Execute the complete 6-agent pipeline."""
 
-        # Step 1: ????Agent - ???????????추출
+        # Step 1: 전달자 Agent - 의도파악 및 키워드 추출
         logger.info("Step 1: Facilitator Agent processing")
         facilitator_input = self._build_agent_input(user_message, context)
         facilitator_response = await self.facilitator.process(user_message, context)
         context.agent_responses.append(facilitator_response)
 
-        if facilitator_response.intent:
-            context.extracted_intent = facilitator_response.intent
-        if facilitator_response.keywords:
-            context.extracted_keywords.extend(facilitator_response.keywords)
-            context.extracted_keywords = self._deduplicate_sequence(context.extracted_keywords)
+        self._ingest_agent_signal(context, facilitator_response)
 
         await self._emit_event(
             event_handler,
@@ -207,8 +205,8 @@ class EnhancedAgentPipeline:
                 confidence=facilitator_response.confidence,
                 related_keywords=facilitator_response.keywords,
                 follow_up_questions=[
-                    "조금 ??구체?????????�주?�겠???",
-                    "????�??????문제가 발생????"
+                    "조금 더 구체적인 상황을 알려주실 수 있을까요?",
+                    "어떤 문제가 발생했는지 설명해 주실 수 있을까요?"
                 ],
                 query=None
             )
@@ -223,11 +221,13 @@ class EnhancedAgentPipeline:
             )
             return continuation_response
 
-        # Step 2: 검??Agent - 중간 검???보완 검??
+        # Step 2: 검색자 Agent - 다중라운드 검색 및 보완 검색
         logger.info("Step 2: Search Agent processing")
         search_input = self._build_agent_input(user_message, context)
         search_response = await self.search_agent.process(user_message, context)
         context.agent_responses.append(search_response)
+
+        self._ingest_agent_signal(context, search_response)
 
         await self._emit_event(
             event_handler,
@@ -245,6 +245,8 @@ class EnhancedAgentPipeline:
         analysis_response = await self.analyst.process(user_message, context)
         context.agent_responses.append(analysis_response)
 
+        self._ingest_agent_signal(context, analysis_response)
+
         await self._emit_event(
             event_handler,
             "analyst",
@@ -255,11 +257,13 @@ class EnhancedAgentPipeline:
             }
         )
 
-        # Step 4: ???Agent - ?? ???
+        # Step 4: 응답자 Agent - 최종 답변 생성
         logger.info("Step 4: Response Agent processing")
         response_input = self._build_agent_input(user_message, context)
         response_agent_response = await self.response_agent.process(user_message, context)
         context.agent_responses.append(response_agent_response)
+
+        self._ingest_agent_signal(context, response_agent_response)
 
         await self._emit_event(
             event_handler,
@@ -271,11 +275,13 @@ class EnhancedAgentPipeline:
             }
         )
 
-        # Step 5: ???Agent - 참조 ?�?
+        # Step 5: 인용자 Agent - 참조 및 출처 관리
         logger.info("Step 5: Citation Agent processing")
         citation_input = self._build_agent_input(user_message, context)
         citation_response = await self.citation_agent.process(user_message, context)
         context.agent_responses.append(citation_response)
+
+        self._ingest_agent_signal(context, citation_response)
 
         await self._emit_event(
             event_handler,
@@ -287,11 +293,13 @@ class EnhancedAgentPipeline:
             }
         )
 
-        # Step 6: 검증자 Agent - 종합 검?
+        # Step 6: 검증자 Agent - 종합 검증 및 품질관리
         logger.info("Step 6: Validator Agent processing")
         validator_input = self._build_agent_input(user_message, context)
         validation_response = await self.validator.process(user_message, context)
         context.agent_responses.append(validation_response)
+
+        self._ingest_agent_signal(context, validation_response)
 
         await self._emit_event(
             event_handler,
@@ -338,14 +346,22 @@ class EnhancedAgentPipeline:
             logger.warning(f"Event handler error for {agent}: {exc}")
 
     def _build_agent_input(self, user_message: str, context: ConversationContext) -> Dict[str, Any]:
+        priority_memory = self._ensure_priority_memory(context)
+        primary_intent = priority_memory["intents"][0] if priority_memory["intents"] else context.extracted_intent
+        primary_keywords = priority_memory["keywords"][:10] if priority_memory["keywords"] else context.extracted_keywords[:10]
+
         return {
             "user_message": user_message,
-            "intent": context.extracted_intent,
-            "keywords": context.extracted_keywords[-10:],
+            "intent": primary_intent,
+            "keywords": primary_keywords,
+            "priority_intents": priority_memory["intents"][:3],
+            "priority_keywords": priority_memory["keywords"][:10],
             "context": self._summarize_context(context)
         }
 
     def _summarize_context(self, context: ConversationContext) -> Dict[str, Any]:
+        priority_memory = self._ensure_priority_memory(context)
+
         return {
             "conversation_id": context.conversation_id,
             "turn_count": len(context.user_messages),
@@ -353,8 +369,10 @@ class EnhancedAgentPipeline:
             "recent_agent_actions": [
                 response.action.value for response in context.agent_responses[-3:]
             ],
-            "extracted_intent": context.extracted_intent,
-            "extracted_keywords": context.extracted_keywords[-10:]
+            "extracted_intent": context.extracted_intent or (priority_memory["intents"][0] if priority_memory["intents"] else None),
+            "extracted_keywords": priority_memory["keywords"][:10] if priority_memory["keywords"] else context.extracted_keywords[:10],
+            "priority_intents": priority_memory["intents"][:3],
+            "priority_keywords": priority_memory["keywords"][:10]
         }
 
     def _summarize_agent_response(self, response: AgentResponse) -> Dict[str, Any]:
@@ -431,6 +449,59 @@ class EnhancedAgentPipeline:
             "follow_up_questions": response.follow_up_questions,
             "processing_time": response.processing_time,
         }
+
+    def _ingest_agent_signal(self, context: ConversationContext, response: AgentResponse) -> None:
+        """Update priority memory with latest agent signal."""
+        if response is None:
+            return
+
+        priority_memory = self._ensure_priority_memory(context)
+
+        if response.intent:
+            priority_memory["intents"] = self._prepend_unique(priority_memory["intents"], response.intent)
+            context.extracted_intent = priority_memory["intents"][0]
+        elif priority_memory["intents"] and not context.extracted_intent:
+            context.extracted_intent = priority_memory["intents"][0]
+
+        if response.keywords:
+            priority_memory["keywords"] = self._merge_priority_keywords(priority_memory["keywords"], response.keywords)
+        if priority_memory["keywords"]:
+            context.extracted_keywords = priority_memory["keywords"]
+
+    def _ensure_priority_memory(self, context: ConversationContext) -> Dict[str, List[str]]:
+        """Ensure priority memory structure exists on the context."""
+        memory = context.session_metadata.setdefault(
+            "priority_memory",
+            {"intents": [], "keywords": []}
+        )
+
+        intents = memory.get("intents", [])
+        keywords = memory.get("keywords", [])
+
+        if not isinstance(intents, list):
+            intents = list(intents)
+        if not isinstance(keywords, list):
+            keywords = list(keywords)
+
+        memory["intents"] = intents
+        memory["keywords"] = keywords
+        return memory
+
+    def _merge_priority_keywords(self, existing: List[str], new_keywords: List[str]) -> List[str]:
+        """Merge new keywords giving precedence to the latest ones."""
+        combined = [kw.strip() for kw in new_keywords if kw.strip()] + existing
+        merged = self._deduplicate_sequence(combined)
+        return merged[:20]
+
+    @staticmethod
+    def _prepend_unique(items: List[str], value: str, limit: int = 5) -> List[str]:
+        """Prepend value keeping uniqueness and size constraints."""
+        value = value.strip()
+        if not value:
+            return items[:limit]
+        updated = [value]
+        updated.extend(item for item in items if item != value)
+        return updated[:limit]
 
     @staticmethod
     def _deduplicate_sequence(items: List[str]) -> List[str]:
@@ -510,13 +581,13 @@ class EnhancedAgentPipeline:
             intent = context.extracted_intent.lower()
             if "법령" in intent:
                 follow_ups.extend([
-                    "??법령??????????�규�?????�???????",
-                    "관???????�?찾아보시겠습?�?"
+                    "어떤 법령이나 조항을 검토해야 할지 함께 살펴볼까요?",
+                    "관련 규제나 행정 해석이 필요한지도 알려주세요."
                 ])
-            elif "??" in intent:
+            elif "소송" in intent or "분쟁" in intent:
                 follow_ups.extend([
-                    "비슷???????�?????????�겠??�?",
-                    "최신 법령 개정?????�?검???�???"
+                    "비슷한 분쟁 사례나 판례가 있는지 찾아드릴까요?",
+                    "진행 중인 절차나 일정이 있다면 공유해 주실 수 있을까요?"
                 ])
 
         return follow_ups[:4]  # Limit to 4
@@ -539,12 +610,12 @@ class EnhancedAgentPipeline:
                 "max_conversation_turns": self.max_conversation_turns
             },
             "agents": {
-                "facilitator": {"status": "operational", "role": "?????????"},
-                "search": {"status": "operational", "role": "?????????"},
-                "analyst": {"status": "operational", "role": "법적분석/?????"},
-                "response": {"status": "operational", "role": "???????"},
-                "citation": {"status": "operational", "role": "???출처관?"},
-                "validator": {"status": "operational", "role": "종합검??질???"}
+                "facilitator": {"status": "operational", "role": "의도파악/키워드추출"},
+                "search": {"status": "operational", "role": "다중라운드검색"},
+                "analyst": {"status": "operational", "role": "법적분석/쟁점식별"},
+                "response": {"status": "operational", "role": "답변내용생성"},
+                "citation": {"status": "operational", "role": "인용/출처관리"},
+                "validator": {"status": "operational", "role": "종합검증/품질관리"}
             },
             "search": search_status
         }

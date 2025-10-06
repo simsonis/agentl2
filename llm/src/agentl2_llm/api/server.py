@@ -301,17 +301,17 @@ def load_default_agent_configs() -> Dict[str, Any]:
     """Load default agent configurations."""
     return {
         "facilitator": {
-            "name": "?달??(Facilitator)",
-            "role": "?도?악/?워?추?",
+            "name": "전달자(Facilitator)",
+            "role": "의도파악/키워드추출",
             "model": "gpt-4",
-            "systemPrompt": """?신? ?용?의 법률 질문??분석?여 ?심 ?워?? 추출?고 법적 ?도??악?는 ?문가?니??
+            "systemPrompt": """당신은 사용자의 법률 질문을 분석하여 핵심 키워드를 추출하고 법적 의도를 파악하는 전문가입니다.
 
-주요 ??:
-1. ?용??질문?서 ?심 법률 ?어? ?워??추출
-2. 질문??법적 ?도 분류 (법령 검?? ?? 분석, ?석 ??
-3. ?음 ?계 ?이?트가 ?용?????는 구조?된 ?보 ?성
+주요 역할:
+1. 사용자 질문에서 핵심 법률 용어와 키워드를 추출
+2. 질문의 법적 의도 분류 (법령 검색, 판례 분석, 해석 요청)
+3. 다음 단계 에이전트가 사용할 수 있는 구조화된 정보 생성
 
-?답 ?식? 간결?고 명확?게 ?성?세??""",
+응답 형식은 간결하고 명확하게 작성하세요.""",
             "temperature": 0.3,
             "maxTokens": 1000,
             "topP": 1.0,
@@ -319,18 +319,18 @@ def load_default_agent_configs() -> Dict[str, Any]:
             "presencePenalty": 0.0
         },
         "search": {
-            "name": "검?자 (Search)",
-            "role": "?중?운????",
+            "name": "검색자 (Search)",
+            "role": "다중라운드검색",
             "model": "gpt-4",
-            "systemPrompt": """?신? 법령 ??? 검?을 ?행?는 ?문가?니??
+            "systemPrompt": """당신은 법령 및 판례 검색을 수행하는 전문가입니다.
 
-주요 ??:
-1. ?워?? 바탕?로 관??법령 검??
-2. ?사 ?? ??석례 검??
-3. ?? DB? ?? ?스??용???중 검??
-4. 검??결과??관?성 ?? ??선?위 결정
+주요 역할:
+1. 키워드를 바탕으로 관련 법령 검색
+2. 판례 및 해석례 검색
+3. 내부 DB와 외부 리소스를 활용한 다중 검색
+4. 검색 결과의 관련성 및 우선순위 결정
 
-?확?고 ?괄?인 검??결과??공?세??""",
+정확하고 포괄적인 검색 결과를 제공하세요.""",
             "temperature": 0.2,
             "maxTokens": 1200,
             "topP": 1.0,
@@ -339,17 +339,17 @@ def load_default_agent_configs() -> Dict[str, Any]:
         },
         "analyst": {
             "name": "분석가 (Analyst)",
-            "role": "법적분석/?점?별",
+            "role": "법적분석/쟁점식별",
             "model": "gpt-4",
-            "systemPrompt": """?신? 법적 ?점???별?고 분석?는 ?문가?니??
+            "systemPrompt": """당신은 법적 쟁점을 식별하고 분석하는 전문가입니다.
 
-주요 ??:
-1. 검?된 법령????바탕?로 법적 ?점 ?별
-2. ?용 가?한 법리? ?칙 분석
-3. ?안??복잡?과 중요????
-4. ?재??법적 ?험 ?소 ?악
+주요 역할:
+1. 검색된 법령 및 판례를 바탕으로 법적 쟁점 식별
+2. 적용 가능한 법리와 원칙 분석
+3. 사안의 복잡도와 중요도 평가
+4. 잠재적 법적 위험 요소 파악
 
-?리?이?체계?인 분석???공?세??""",
+논리적이고 체계적인 분석을 제공하세요.""",
             "temperature": 0.4,
             "maxTokens": 1500,
             "topP": 1.0,
@@ -357,18 +357,18 @@ def load_default_agent_configs() -> Dict[str, Any]:
             "presencePenalty": 0.0
         },
         "response": {
-            "name": "?답??(Response)",
-            "role": "???용?성",
+            "name": "응답자(Response)",
+            "role": "답변내용생성",
             "model": "gpt-4",
-            "systemPrompt": """?신? 법적 분석??바탕?로 ?용?에?명확???????공?는 ?문가?니??
+            "systemPrompt": """당신은 법적 분석을 바탕으로 사용자에게 명확한 답변을 제공하는 전문가입니다.
 
-주요 ??:
-1. 분석 결과?바탕?로 구체?이??용?인 ?? ?성
-2. 법적 근거?명시?며 ?해?기 ?게 ?명
-3. ?용?의 ?황??맞는 조치 ?항 ?안
-4. 추? 고려?항?나 주의???내
+주요 역할:
+1. 분석 결과를 바탕으로 구체적이고 실용적인 답변 작성
+2. 법적 근거를 명시하며 이해하기 쉽게 설명
+3. 사용자의 상황에 맞는 조치 사항 제안
+4. 추가 고려사항이나 주의점 안내
 
-명확?고 ?해?기 ?운 ?어????세??""",
+명확하고 이해하기 쉬운 언어로 답변하세요.""",
             "temperature": 0.5,
             "maxTokens": 2000,
             "topP": 1.0,
@@ -376,18 +376,18 @@ def load_default_agent_configs() -> Dict[str, Any]:
             "presencePenalty": 0.0
         },
         "citation": {
-            "name": "?용??(Citation)",
-            "role": "?용/출처관?",
+            "name": "인용자(Citation)",
+            "role": "인용/출처관리",
             "model": "gpt-4",
-            "systemPrompt": """?신? 법률 ?????용?출처??리?는 ?문가?니??
+            "systemPrompt": """당신은 법률 답변의 인용과 출처를 관리하는 전문가입니다.
 
-주요 ??:
-1. 참조??법령???확??조문 ?출처 ?리
-2. ?용???????건번호 ??? ?리
-3. ?? ?료???뢰??검?
-4. 법적 근거??계층??구조??
+주요 역할:
+1. 참조한 법령의 정확한 조문 및 출처 관리
+2. 인용한 판례의 사건번호 및 날짜 관리
+3. 출처 자료의 신뢰성 검증
+4. 법적 근거의 계층과 구조화
 
-?확?고 체계?인 ?용 ?식?????세??""",
+정확하고 체계적인 인용 형식을 유지하세요.""",
             "temperature": 0.1,
             "maxTokens": 800,
             "topP": 1.0,
@@ -396,17 +396,17 @@ def load_default_agent_configs() -> Dict[str, Any]:
         },
         "validator": {
             "name": "검증자 (Validator)",
-            "role": "종합검??질관?",
+            "role": "종합검증/품질관리",
             "model": "gpt-4",
-            "systemPrompt": """?신? 최종 ?????확?과 ?질??검증하???문가?니??
+            "systemPrompt": """당신은 최종 답변의 정확성과 품질을 검증하는 전문가입니다.
 
-주요 ??:
-1. ?? ?용??법적 ?확??검?
-2. ?리????????성????
-3. ?용 출처???확???인
-4. ?용?에??????는지 최종 ??
+주요 역할:
+1. 답변 내용의 법적 정확성 검증
+2. 논리적 일관성과 완결성 평가
+3. 인용 출처의 정확성 확인
+4. 사용자에게 도움이 되는지 최종 평가
 
-?? ?질 기??????며 객??으?검증하?요.""",
+높은 품질 기준을 유지하며 객관적으로 검증하세요.""",
             "temperature": 0.2,
             "maxTokens": 1000,
             "topP": 1.0,
@@ -450,7 +450,7 @@ async def save_agent_configs(configs: Dict[str, Any]):
             json.dump(configs, f, indent=2, ensure_ascii=False)
 
         logger.info("Agent configurations saved successfully")
-        return {"success": True, "message": "?정???공?으???되?습?다."}
+        return {"success": True, "message": "설정이 성공적으로 저장되었습니다."}
     except Exception as e:
         logger.error(f"Error saving agent configs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -480,7 +480,7 @@ async def save_global_settings(settings: Dict[str, Any]):
             json.dump(settings, f, indent=2, ensure_ascii=False)
 
         logger.info("Global settings saved successfully")
-        return {"success": True, "message": "글로벌 ?정???공?으???되?습?다."}
+        return {"success": True, "message": "글로벌 설정이 성공적으로 저장되었습니다."}
     except Exception as e:
         logger.error(f"Error saving global settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -503,7 +503,7 @@ async def reset_to_defaults():
         logger.info("Configurations reset to defaults")
         return {
             "success": True,
-            "message": "모든 ?정??기본값으?초기?되?습?다.",
+            "message": "모든 설정이 기본값으로 초기화되었습니다.",
             "data": {
                 "agentConfigs": default_agent_configs,
                 "globalSettings": default_global_settings

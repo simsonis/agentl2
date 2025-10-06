@@ -4,7 +4,7 @@ Facilitator Agent - Handles initial user query processing and intent extraction.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List
 from loguru import logger
 
 from .base_agent import BaseAgent, AgentResponse, AgentAction, ConversationContext
@@ -73,27 +73,38 @@ class FacilitatorAgent(BaseAgent):
             parsed = self._parse_structured_response(llm_response)
 
             # Determine action based on parsed response
-            if parsed["clarification_options"]:
+            clarification_options = parsed.get("clarification_options") or []
+            should_request = self._should_request_clarification(parsed, user_input, context)
+            has_intent = bool((parsed.get("intent") or "").strip())
+            has_keywords = bool(parsed.get("keywords"))
+
+            if should_request:
                 # Need clarification
                 action = AgentAction.REQUEST_CLARIFICATION
-                message = self._format_clarification_message(parsed["clarification_options"])
+                message = self._format_clarification_message(clarification_options)
+                selected_clarifications = clarification_options
 
-            elif parsed["intent"] and parsed["keywords"]:
+            elif has_intent and has_keywords:
                 # Ready to search
                 action = AgentAction.FORWARD_TO_SEARCH
                 message = f"의도를 파악했습니다. 관련 정보를 검색하겠습니다."
+                selected_clarifications = []
 
             else:
                 # Continue conversation for more info
                 action = AgentAction.CONTINUE_CONVERSATION
-                message = "조금 더 구체적인 상황을 알려주시면 더 정확한 도움을 드릴 수 있습니다."
+                if clarification_options:
+                    message = "추가적으로 필요한 정보를 알려주세요. 필요하시면 나중에 추가 질문으로 도와드리겠습니다."
+                else:
+                    message = "조금 더 구체적인 상황을 알려주시면 더 정확한 답변을 드릴 수 있습니다."
+                selected_clarifications = []
 
             return AgentResponse(
                 action=action,
                 message=message,
                 intent=parsed["intent"],
                 keywords=parsed["keywords"],
-                clarification_options=parsed["clarification_options"],
+                clarification_options=selected_clarifications,
                 confidence=parsed["confidence"],
                 metadata={
                     "llm_response": llm_response,
@@ -108,6 +119,81 @@ class FacilitatorAgent(BaseAgent):
                 message="죄송합니다. 질문을 처리하는 중 오류가 발생했습니다. 다시 한 번 말씀해 주시겠어요?",
                 confidence=0.0
             )
+
+    def _should_request_clarification(
+        self,
+        parsed: Dict[str, Any],
+        user_input: str,
+        context: ConversationContext
+    ) -> bool:
+        """Decide whether clarification should be requested."""
+        options = parsed.get("clarification_options") or []
+        if not options:
+            return False
+
+        intent_text = (parsed.get("intent") or "").strip()
+        keywords = parsed.get("keywords") or []
+
+        # Avoid repeated clarification loops when the user already answered follow-ups.
+        if context.agent_responses:
+            last_action = context.agent_responses[-1].action
+            if last_action == AgentAction.REQUEST_CLARIFICATION:
+                return False
+
+        # Respect explicit questions or requests for information.
+        if self._looks_like_direct_question(user_input):
+            return False
+
+        # Prior extracted context often provides enough signal to proceed.
+        if context.extracted_intent or context.extracted_keywords:
+            return False
+
+        # Intent with some substance or multiple keywords indicates sufficient clarity.
+        if len(intent_text) >= 20 or len(keywords) >= 2:
+            return False
+
+        if intent_text and keywords:
+            return False
+
+        return True
+
+    def _looks_like_direct_question(self, user_input: str) -> bool:
+        """Heuristic detection for direct questions or information requests."""
+        if not user_input:
+            return False
+
+        normalized = user_input.strip()
+        if not normalized:
+            return False
+
+        if "?" in normalized:
+            return True
+
+        question_cues = [
+            "알려",
+            "말해",
+            "설명해",
+            "정리해",
+            "궁금",
+            "다 말해",
+            "다 알려",
+            "해줘",
+            "무엇",
+            "어떤",
+            "어떻게",
+            "왜",
+            "언제",
+            "누가",
+            "누구",
+            "알고 싶",
+            "알고싶"
+        ]
+        if any(cue in normalized for cue in question_cues):
+            return True
+
+        lowered = normalized.lower()
+        english_cues = ["tell me", "what", "how", "why", "which", "list", "explain"]
+        return any(cue in lowered for cue in english_cues)
 
     def _format_clarification_message(self, options: List[str]) -> str:
         """Format clarification options into a user-friendly message."""

@@ -9,13 +9,24 @@
 
 ## 📋 시작 명령어
 
-### LLM 서버 시작
+### 🐳 Docker로 전체 시스템 시작 (권장)
+```bash
+# Windows
+docker-start.bat
+
+# Linux/Mac
+docker-compose up -d
+```
+
+### 🔧 개발 모드 (로컬 실행)
+
+**LLM 서버 시작**
 ```bash
 cd llm
 python real_agent_server.py
 ```
 
-### UI 서버 시작
+**UI 서버 시작**
 ```bash
 cd ui
 npm run dev -- --port 3000
@@ -23,12 +34,28 @@ npm run dev -- --port 3000
 
 ## 🔍 상태 확인
 
-### 포트 사용 확인
+### Docker 서비스 상태
 ```bash
-netstat -an | findstr ":3000\|:8001"
+docker-compose ps
+docker-compose logs -f llm    # LLM 서버 로그
+docker-compose logs -f ui     # UI 서버 로그
 ```
 
-### 충돌 프로세스 정리
+### 포트 사용 확인
+```bash
+netstat -an | findstr ":3000\|:8001\|:5432\|:8080"
+```
+
+### Docker 서비스 중지
+```bash
+# Windows
+docker-stop.bat
+
+# Linux/Mac
+docker-compose down
+```
+
+### 충돌 프로세스 정리 (로컬 실행 시)
 ```bash
 # Node.js 프로세스 종료
 taskkill /F /im node.exe
