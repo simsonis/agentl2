@@ -7,7 +7,11 @@
       "Bash(docker-compose build:*)",
       "Bash(docker-compose:*)",
       "Bash(cat:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix: 한글 인코딩 문제 전면 수정 및 테스트 인프라 구축\n\n## 주요 변경사항\n\n### 1. 한글 인코딩 수정\n- **facilitator_agent.py**: 메시지 문자열 3곳 한글 복원\n- **enhanced_agent_pipeline.py**: Docstring, 주석, role descriptions 전면 수정\n- **server.py**: 6개 Agent Config의 name, role, systemPrompt 한글 복원\n- **base_agent.py**: 문자열 리터럴 syntax error 수정\n- **test_facilitator_agent.py**: 테스트 문자열 한글 복원\n\n### 2. Docker 및 환경 설정\n- **Dockerfile**: Korean locale (ko_KR.UTF-8) 추가\n- **.env**: LANG 및 LC_ALL을 ko_KR.UTF-8로 변경\n- **docker-compose.yml**: LLM 서비스 포트 8004 → 8001로 통일\n- **real_agent_server.py**: JSON 응답에 ensure_ascii=False 추가\n\n### 3. 테스트 인프라 구축 (67.3% 통과율)\n- **conftest.py**: Python 3.7 AsyncMock 호환성 polyfill 추가\n- **test_base_agent.py**: 14/14 테스트 통과 (100%)\n- **test_facilitator_agent.py**: 12/13 테스트 통과 (92%)\n- **test_pipeline.py**: 7/15 테스트 통과 (47%)\n- **test_search_agent.py**: 검색 에이전트 테스트 구조 완성\n- **pytest.ini**: asyncio_mode=auto, coverage 설정\n- **requirements-test.txt**: 테스트 의존성 정의\n\n### 4. 문서화\n- **PROGRESS.md**: 프로젝트 전체 진행상황 (72.5%)\n- **SYSTEM_STATUS.md**: 모든 서비스 상태 및 접속 정보\n- **README_TESTS.md**: 테스트 실행 가이드\n- **TEST_SUMMARY.md**: 테스트 결과 및 커버리지 리포트\n- **CLAUDE.md**: 포트 설정 및 아키텍처 문서 업데이트\n\n### 5. Python 캐시 정리\n- 모든 Python 3.7 .pyc 캐시 파일 삭제\n- API 및 pipeline 모듈 캐시 정리\n\n## 검증 결과\n✅ 깨진 한글 문자 0건\n✅ 6단계 에이전트 파이프라인 정상 작동\n✅ follow_up_questions 한글 정상 출력\n✅ Agent Config API 한글 정상 반환\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
