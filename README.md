@@ -11,9 +11,10 @@
 4. **웹 기반 챗봇 UI** - React/Next.js 기반 법률 상담 인터페이스
 
 ### 데이터 현황
-- **법령/판례**: PostgreSQL 관계형 DB (수집 대기)
-- **계약서 서식**: 10,477개 템플릿, 70,029개 조항, 209,883개 문단 (적재 완료)
-- **온톨로지 라벨**: 1,534개 법률 개념 매핑
+- **계약서 서식**: 10,477개 템플릿, 70,029개 조항, 209,883개 문단 ✅ 적재 완료
+- **ML 판례 데이터셋**: 99,028건 (사건명분류, 판결예측, 법령분류, 요약 등) ✅ 적재 완료
+- **온톨로지 라벨**: 1,534개 법률 개념 매핑 ✅ 적재 완료
+- **법령/판례 API**: 국가법령정보센터 수집 🔄 준비 중
 
 ## 🚀 빠른 시작
 
@@ -87,7 +88,14 @@ make prec ARGS='--keywords "금융소비자보호 불완전판매" --date-range 
   - 예: 1001002(목적조항), 1001003(정의조항), 1001004(의무조항)
 - `form_entities`: 변수/플레이스홀더 (@회사1, @주소1 등)
 
-**법령/판례 데이터** - 법률 자문/검색용 (수집 대기)
+**ML 판례 데이터셋** - 머신러닝 학습/검색용 (적재 완료)
+- `ml_casename_cls`: 11,294건 사건명 분류
+- `ml_ljp`: 13,335건 판결 예측 (Legal Judgment Prediction)
+- `ml_raw_samples`: 51,101건 원본 판례
+- `ml_statute_cls`: 3,298건 법령 분류
+- `ml_summarization`: 20,000건 판례 요약
+
+**법령/판례 API 데이터** - 법률 자문/검색용 (수집 준비 중)
 - `laws`: 법령 전문, 조문, 개정 이력
 - `precedents`: 판례 원문, 판시사항, 판결요지
 
@@ -263,16 +271,48 @@ agentl2/
 
 ### PostgreSQL 데이터베이스
 ```sql
--- 서식 DB (계약서 생성/검토용)
+-- 서식 DB (계약서 생성/검토용) ✅ 적재 완료
 SELECT 'form_templates' as table, COUNT(*) FROM form_templates;   -- 10,477
 SELECT 'form_articles' as table, COUNT(*) FROM form_articles;     -- 70,029
 SELECT 'form_paragraphs' as table, COUNT(*) FROM form_paragraphs; -- 209,883
 SELECT 'form_labels' as table, COUNT(*) FROM form_labels;         -- 1,534
 
--- 법령/판례 DB (수집 대기)
+-- ML 판례 데이터셋 (외부 수집 완료) ✅ 적재 완료
+SELECT 'ml_casename_cls' as table, COUNT(*) FROM ml_casename_cls;   -- 11,294
+SELECT 'ml_ljp' as table, COUNT(*) FROM ml_ljp;                     -- 13,335
+SELECT 'ml_raw_samples' as table, COUNT(*) FROM ml_raw_samples;     -- 51,101
+SELECT 'ml_statute_cls' as table, COUNT(*) FROM ml_statute_cls;     -- 3,298
+SELECT 'ml_summarization' as table, COUNT(*) FROM ml_summarization; -- 20,000
+
+-- 법령/판례 DB (국가법령정보센터 API 수집 대기) 🔄 준비 중
 SELECT 'laws' as table, COUNT(*) FROM laws;           -- 0 (수집 필요)
 SELECT 'precedents' as table, COUNT(*) FROM precedents; -- 0 (수집 필요)
 ```
+
+### ML 판례 데이터셋 상세
+**외부 머신러닝 데이터셋 (적재 완료: 99,028건)**
+
+| 테이블 | 레코드 수 | 설명 |
+|--------|----------|------|
+| `ml_casename_cls` | 11,294 | 판례 사건명 분류 데이터 |
+| `ml_ljp` | 13,335 | Legal Judgment Prediction (판결 예측) |
+| `ml_raw_samples` | 51,101 | 원본 판례 샘플 (가장 많은 데이터) |
+| `ml_statute_cls` | 3,298 | 법령 분류 데이터 |
+| `ml_summarization` | 20,000 | 판례 요약 데이터 |
+
+**주요 컬럼 구조:**
+- **ml_casename_cls**: casetype, casename, facts (사실관계)
+- **ml_ljp**: casetype, casename, facts, claim_acceptance_lv (청구인용도), gist_of_claim (청구요지), ruling (판결)
+- **ml_raw_samples**: 원본 판례 텍스트 및 메타데이터
+- **ml_statute_cls**: 법령 분류 및 적용 법조문
+- **ml_summarization**: 판례 요약문 (AI 학습용)
+
+**데이터 출처**: 외부 법률 ML 데이터셋 (JSONL 형식)
+
+**마이그레이션 상태**:
+- ✅ PostgreSQL 적재 완료 (99,028건)
+- 🔄 내부 `precedents` 테이블로 정규화 작업 준비 중
+- 🔄 `laws` 테이블과 연계 예정 (법조문 참조)
 
 ### 서식 데이터 상세
 - **템플릿 유형**: 비밀유지계약서(NDA), 위임장, 각서, 동의서 등
@@ -286,6 +326,8 @@ SELECT 'precedents' as table, COUNT(*) FROM precedents; -- 0 (수집 필요)
 
 ### Phase 1: 데이터 수집 (현재 진행 중)
 - [x] PostgreSQL 서식 DB 구축 (29만 건 완료)
+- [x] ML 판례 데이터셋 적재 (99,028건 완료)
+- [ ] ML 판례 데이터 정규화 (`precedents` 테이블로 마이그레이션)
 - [ ] 법령 데이터 수집 (국가법령정보센터 API)
 - [ ] 판례 데이터 수집 (대법원 API)
 
